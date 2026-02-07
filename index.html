@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Room-Based Chat</title>
+    
+    <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/stompjs@2.3.3/lib/stomp.min.js"></script>
+    
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    
+    <!-- Room Selection Page -->
+    <div id="room-page" class="page">
+        <h2>🏠 Join or Create Room</h2>
+        
+        <button onclick="createRoom()">Create New Room</button>
+        
+        <div class="divider">OR</div>
+        
+        <input type="text" 
+               id="roomCodeInput" 
+               placeholder="Enter 4-digit room code" 
+               maxlength="4"
+               pattern="[0-9]{4}">
+        <div id="roomError" class="error hidden">Invalid room code</div>
+        <button onclick="validateAndJoinRoom()">Join Existing Room</button>
+    </div>
+    
+    <!-- Username Page -->
+    <div id="username-page" class="page hidden">
+        <h2>📝 Enter Your Name</h2>
+        <p style="text-align: center; margin-bottom: 15px; font-size: 14px; color: #666;">
+            Room Code: <strong id="selectedRoomCode"></strong>
+        </p>
+        <form id="username-form">
+            <input type="text" 
+                   id="usernameInput" 
+                   placeholder="Enter your username" 
+                   required 
+                   autocomplete="off"
+                   maxlength="20">
+            <button type="submit">Join Chat</button>
+        </form>
+    </div>
+    
+    <!-- Chat Page -->
+    <div id="chat-page" class="page hidden">
+        <div id="chat-header">
+            <h2>💬 Room Chat</h2>
+            <div id="room-info">
+                Room: <span id="currentRoomCode"></span> | 
+                Users: <span id="user-count">0</span>
+            </div>
+        </div>
+        
+        <div id="messages"></div>
+        
+        <form id="message-form">
+            <input type="text" 
+                   id="messageInput" 
+                   placeholder="Type a message..." 
+                   autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
+    </div>
+    
+    <script>
+        // Global variables
+        let stompClient = null;
+        let currentUsername = null;
+        let currentRoomCode = null;
+        let connectedUsers = new Set();
+        
+        // DOM elements
+        const roomPage = document.getElementById('room-page');
+        const usernamePage = document.getElementById('username-page');
+        const chatPage = document.getElementById('chat-page');
+        const usernameForm = document.getElementById('username-form');
+        const messageForm = document.getElementById('message-form');
+        const messageInput = document.getElementById('messageInput');
+        const messagesArea = document.getElementById('messages');
+        const userCountElement = document.getElementById('user-count');
+        const roomError = document.getElementById('roomError');
+        
+        // Create new room
+        async function createRoom() {
+            try {
+                const response = await fetch('http://localhost:8080/api/rooms/create', {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                currentRoomCode = data.roomCode;
+                
+                showUsernamePage();
+            } catch (error) {
+                console.error('Error creating room:', error);
+                alert('Failed to create room. Please try again.');
+            }
+        }
+        
+        // Validate and join existing room
+        async function validateAndJoinRoom() {
+            const roomCodeInput = document.getElementById('roomCodeInput');
+            const roomCode = roomCodeInput.value.trim();
+            
+            if (roomCode.length !== 4 || !/^\d{4}$/.test(roomCode)) {
+                roomError.textContent = 'Please enter a valid 4-digit code';
+                roomError.classList.remove('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`http://localhost:8080/api/rooms/validate/${roomCode}`);
+                const data = await response.json();
+                
+                if (data.exists) {
+                    currentRoomCode = roomCode;
+                    roomError.classList.add('hidden');
+                    showUsernamePage();
+                } else {
+                    roomError.textContent = 'Room not found. Please check the code.';
+                    roomError.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error('Error validating room:', error);
+                roomError.textContent = 'Error validating room. Please try again.';
+                roomError.classList.remove('hidden');
+            }
+        }
+        
+        // Show username page
+        function showUsernamePage() {
+            roomPage.classList.add('hidden');
+            usernamePage.classList.remove('hidden');
+            document.getElementById('selectedRoomCode').textContent = currentRoomCode;
+        }
+        
+        // Username form submission
+        usernameForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            const usernameInput = document.getElementById('usernameInput');
+            currentUsername = usernameInput.value.trim();
+            
+            if(currentUsername) {
+                usernamePage.classList.add('hidden');
+                chatPage.classList.remove('hidden');
+                document.getElementById('currentRoomCode').textContent = currentRoomCode;
+                
+                connect();
+            }
+        });
+        
+        // Message form submission
+        messageForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            sendMessage();
+        });
+        
+        function connect() {
+            const socket = new SockJS('http://localhost:8080/ws');
+            stompClient = Stomp.over(socket);
+            stompClient.debug = null;
+            
+            stompClient.connect({}, onConnected, onError);
+        }
+        
+        function onConnected() {
+            console.log('Connected to WebSocket');
+            
+            // Subscribe to THIS room's topic
+            // KEY: Dynamic subscription based on room code
+            stompClient.subscribe(`/topic/room.${currentRoomCode}`, onMessageReceived);
+            // Only messages sent to /topic/room.1234 will be received here
+            
+            // Send JOIN message to THIS room
+            stompClient.send(
+                `/app/chat.addUser/${currentRoomCode}`,
+                // Dynamic destination: /app/chat.addUser/1234
+                {},
+                JSON.stringify({
+                    sender: currentUsername,
+                    type: 'JOIN',
+                    roomCode: currentRoomCode
+                })
+            );
+        }
+        
+        function onError(error) {
+            console.error('Could not connect to WebSocket', error);
+            alert('Could not connect to chat server. Please try again later.');
+        }
+        
+        function sendMessage() {
+            const messageContent = messageInput.value.trim();
+            
+            if(messageContent && stompClient) {
+                const chatMessage = {
+                    sender: currentUsername,
+                    content: messageContent,
+                    type: 'CHAT',
+                    roomCode: currentRoomCode
+                };
+                
+                // Send to THIS room's endpoint
+                stompClient.send(
+                    `/app/chat.sendMessage/${currentRoomCode}`,
+                    // Dynamic destination: /app/chat.sendMessage/1234
+                    {},
+                    JSON.stringify(chatMessage)
+                );
+                
+                messageInput.value = '';
+            }
+        }
+        
+        function onMessageReceived(payload) {
+            const message = JSON.parse(payload.body);
+            
+            // Update user count
+            if(message.type === 'JOIN') {
+                connectedUsers.add(message.sender);
+                updateUserCount();
+            } else if(message.type === 'LEAVE') {
+                connectedUsers.delete(message.sender);
+                updateUserCount();
+            }
+            
+            // Display message
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message', message.type);
+            
+            if(message.type === 'CHAT') {
+                messageElement.innerHTML = `
+                    <div class="message-sender">${message.sender}</div>
+                    <div class="message-content">${message.content}</div>
+                `;
+            } else if(message.type === 'JOIN') {
+                messageElement.innerHTML = `
+                    <div class="message-content">✨ ${message.sender} joined the room</div>
+                `;
+            } else if(message.type === 'LEAVE') {
+                messageElement.innerHTML = `
+                    <div class="message-content">👋 ${message.sender} left the room</div>
+                `;
+            }
+            
+            messagesArea.appendChild(messageElement);
+            messagesArea.scrollTop = messagesArea.scrollHeight;
+        }
+        
+        function updateUserCount() {
+            userCountElement.textContent = connectedUsers.size;
+        }
+        
+        window.addEventListener('beforeunload', function() {
+            if(stompClient) {
+                stompClient.disconnect();
+            }
+        });
+        
+        // Allow only numbers in room code input
+        document.getElementById('roomCodeInput').addEventListener('input', function(e) {
+            this.value = this.value.replace(/[^0-9]/g, '');
+        });
+    </script>
+</body>
+</html>
