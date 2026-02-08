@@ -11,6 +11,14 @@
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+    <header style="position: fixed; top: 0; width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 15px 30px; z-index: 100;">
+        <h1 style="font-size: 35px; font-weight: 800; letter-spacing: -1px; color: #667eea;">GROUP<span style="color: #764ba2;">PULSE</span></h1>
+        
+        <button onclick="toggleDarkMode()" id="theme-toggle" style="width: auto; padding: 8px 15px; border-radius: 20px; font-size: 15px; background: #667eea; color: white; border: none; cursor: pointer; font-weight: bold;">
+            🌙 Dark Mode
+        </button>
+    </header>
     
     <!-- Room Selection Page -->
     <div id="room-page" class="page">
@@ -267,6 +275,19 @@
         document.getElementById('roomCodeInput').addEventListener('input', function(e) {
             this.value = this.value.replace(/[^0-9]/g, '');
         });
+
+        // dark mode
+        function toggleDarkMode() {
+            const body = document.body;
+            const btn = document.getElementById('theme-toggle');
+            body.classList.toggle('dark-mode');
+            
+            if(body.classList.contains('dark-mode')) {
+                btn.innerHTML = "☀️ Light Mode";
+            } else {
+                btn.innerHTML = "🌙 Dark Mode";
+            }
+        }
     </script>
 </body>
 </html>
