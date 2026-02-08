@@ -88,7 +88,7 @@
         // Create new room
         async function createRoom() {
             try {
-                const response = await fetch('http://localhost:8080/api/rooms/create', {
+                const response = await fetch('https://chat-application-rmnv.onrender.com/api/rooms/create', {
                     method: 'POST'
                 });
                 
@@ -114,7 +114,7 @@
             }
             
             try {
-                const response = await fetch(`http://localhost:8080/api/rooms/validate/${roomCode}`);
+                const response = await fetch(`https://chat-application-rmnv.onrender.com/api/rooms/validate/${roomCode}`);
                 const data = await response.json();
                 
                 if (data.exists) {
@@ -162,7 +162,7 @@
         });
         
         function connect() {
-            const socket = new SockJS('http://localhost:8080/ws');
+            const socket = new SockJS('https://chat-application-rmnv.onrender.com/ws');
             stompClient = Stomp.over(socket);
             stompClient.debug = null;
             
